@@ -1,0 +1,185 @@
+{
+  "skill_name": "fuyao-plugin-creator",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "帮我写一个扶摇平台的数据采集插件，从指定 URL 抓取网页内容并保存为 JSONL，需要支持配置目标 URL（字符串）和并发线程数（整数，默认4）。",
+      "expected_output": "生成采集类插件：目录名含 collector/crawler/fetcher，actions.yaml 含 TARGET_URL(string/text) 和 THREAD_NUM(int/text,默认4)，main.py 符合规范，README.md 齐全。",
+      "files": [],
+      "assertions": [
+        {
+          "name": "目录名体现采集语义",
+          "text": "插件目录名中包含 collector、crawler、fetcher 或 importer 之一（大小写不敏感）"
+        },
+        {
+          "name": "actions.yaml 包含所有必填字段",
+          "text": "actions.yaml 中包含 name、description、common_input_file_path、inputs、outputs、runs 全部字段"
+        },
+        {
+          "name": "PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH 字段名称正确",
+          "text": "actions.yaml 中使用了字面量字符串 PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH，未被改名"
+        },
+        {
+          "name": "URL 参数类型为 string+text",
+          "text": "actions.yaml 中 URL 相关参数的 type 为 string，input_type 为 text"
+        },
+        {
+          "name": "线程数参数类型为 int",
+          "text": "actions.yaml 中线程数参数的 type 为 int"
+        },
+        {
+          "name": "main.py 包含文件头版权注释",
+          "text": "main.py 包含 #!/usr/bin/python3.7 和 Copyright (c) Huawei Technologies"
+        },
+        {
+          "name": "main.py 通过 os.getenv 获取所有参数",
+          "text": "main.py 中使用 os.getenv 获取 PLUGIN_INPUT_FILE_PATH、OUT_PUT_PATH 及自定义参数"
+        },
+        {
+          "name": "main.py 包含必需参数校验",
+          "text": "main.py 包含对 input_dir 和 output_dir 是否为空的判断，并在缺失时 sys.exit(1)"
+        },
+        {
+          "name": "main.py 包含异常处理",
+          "text": "main.py 包含 try/except 异常处理"
+        },
+        {
+          "name": "生成了 README.md",
+          "text": "输出中包含 README.md 的内容，且含有参数说明表格"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "我需要一个扶摇插件，用来过滤掉 JSON 数据中包含乱码字符的记录。可以让用户配置要检查的字段名（支持多字段选择），以及乱码字符比例阈值（超过阈值则过滤掉）。",
+      "expected_output": "生成清洗/过滤类插件，actions.yaml 含多字段选择参数(list/fieldselect)和比例阈值(float/text)，main.py 实现按比例过滤乱码逻辑。",
+      "files": [],
+      "assertions": [
+        {
+          "name": "目录名体现清洗/过滤语义",
+          "text": "插件目录名中包含 filter、check、clean 或 remove 之一（大小写不敏感）"
+        },
+        {
+          "name": "字段列表参数使用 fieldselect 控件",
+          "text": "actions.yaml 中配置字段名的参数 input_type 为 fieldselect，type 为 list"
+        },
+        {
+          "name": "乱码阈值参数类型为 float",
+          "text": "actions.yaml 中表示比例阈值的参数 type 为 float"
+        },
+        {
+          "name": "actions.yaml 包含所有必填字段",
+          "text": "actions.yaml 中包含 name、description、common_input_file_path、inputs、outputs、runs 全部字段"
+        },
+        {
+          "name": "PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH 字段名称正确",
+          "text": "actions.yaml 中使用了字面量字符串 PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH"
+        },
+        {
+          "name": "list 参数通过 json.loads 解析",
+          "text": "main.py 中对 list 类型参数使用了 json.loads() 进行解析"
+        },
+        {
+          "name": "main.py 使用 os.getenv 获取参数",
+          "text": "main.py 使用 os.getenv 获取所有参数"
+        },
+        {
+          "name": "main.py 包含 try/except 异常处理",
+          "text": "main.py 的文件处理循环中包含 try/except 异常处理"
+        },
+        {
+          "name": "main.py 函数有 docstring",
+          "text": "main.py 中的 main() 函数包含 docstring"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "帮我开发一个扶摇数据处理插件，功能是将 JSONL 文件中的指定字段做大小写归一化（支持配置转为全大写、全小写或首字母大写），需要支持多字段配置。",
+      "expected_output": "生成处理类插件，目录名含 processor/converter/normalizer，actions.yaml 含字段列表(list/fieldselect)和归一化模式(string/radio，options:[upper,lower,title])，main.py 实现归一化逻辑。",
+      "files": [],
+      "assertions": [
+        {
+          "name": "目录名体现处理语义",
+          "text": "插件目录名中包含 processor、converter、transformer、normalizer 或 clean 之一（大小写不敏感）"
+        },
+        {
+          "name": "归一化模式参数使用 radio 控件",
+          "text": "actions.yaml 中表示归一化模式的参数 input_type 为 radio，且 options 中包含 upper/lower/title 等选项"
+        },
+        {
+          "name": "字段列表参数使用 fieldselect 控件",
+          "text": "actions.yaml 中多字段选择参数 input_type 为 fieldselect，type 为 list"
+        },
+        {
+          "name": "actions.yaml 包含所有必填字段",
+          "text": "actions.yaml 中包含 name、description、common_input_file_path、inputs、outputs、runs 全部字段"
+        },
+        {
+          "name": "PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH 字段名称正确",
+          "text": "actions.yaml 中使用了字面量字符串 PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH"
+        },
+        {
+          "name": "main.py 实现大小写转换逻辑",
+          "text": "main.py 中包含针对 upper/lower/title 三种模式的文本转换逻辑"
+        },
+        {
+          "name": "main.py 使用 os.getenv 获取参数",
+          "text": "main.py 使用 os.getenv 获取所有参数"
+        },
+        {
+          "name": "list 参数通过 json.loads 解析",
+          "text": "main.py 中对 list 类型参数使用 json.loads() 解析"
+        },
+        {
+          "name": "main.py 包含文件头版权注释",
+          "text": "main.py 包含 Copyright (c) Huawei Technologies 版权声明"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "写一个扶摇数据发布插件，把处理好的 JSONL 数据上传到指定的 OSS 存储桶，需要支持配置 OSS bucket 名称（字符串）和目标路径前缀（字符串，可选）。",
+      "expected_output": "生成发布类插件，目录名含 publisher/exporter/uploader，actions.yaml 含 BUCKET_NAME(string/text,必填) 和 PATH_PREFIX(string/text,非必填)，main.py 实现上传逻辑。",
+      "files": [],
+      "assertions": [
+        {
+          "name": "目录名体现发布语义",
+          "text": "插件目录名中包含 publisher、exporter、pusher 或 uploader 之一（大小写不敏感）"
+        },
+        {
+          "name": "bucket 参数为必填 string",
+          "text": "actions.yaml 中 bucket 相关参数 type 为 string，required 为 true"
+        },
+        {
+          "name": "路径前缀参数为非必填",
+          "text": "actions.yaml 中路径前缀参数 required 为 false 或未标记 required"
+        },
+        {
+          "name": "actions.yaml 包含所有必填字段",
+          "text": "actions.yaml 中包含 name、description、common_input_file_path、inputs、outputs、runs 全部字段"
+        },
+        {
+          "name": "PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH 字段名称正确",
+          "text": "actions.yaml 中使用了字面量字符串 PLUGIN_INPUT_FILE_PATH 和 OUT_PUT_PATH"
+        },
+        {
+          "name": "main.py 使用 os.getenv 获取参数",
+          "text": "main.py 使用 os.getenv 获取所有参数"
+        },
+        {
+          "name": "main.py 包含上传相关逻辑",
+          "text": "main.py 中包含文件上传或推送相关的逻辑代码"
+        },
+        {
+          "name": "main.py 包含 try/except 异常处理",
+          "text": "main.py 包含 try/except 异常处理"
+        },
+        {
+          "name": "生成了 README.md",
+          "text": "输出中包含 README.md 的内容"
+        }
+      ]
+    }
+  ]
+}
