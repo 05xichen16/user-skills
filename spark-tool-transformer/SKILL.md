@@ -189,27 +189,34 @@ logger = logging.getLogger(__name__)
 
 # ── Executor 函数（运行在 worker 节点，不能引用 SparkContext）──────────────
 
-def process_single_file(obs_path: str, config_dict: dict) -> list:
+def process_file_bytes(path_bytes: tuple, config_dict: dict) -> list:
     """
+    path_bytes: sc.binaryFiles() 产出的 (obs_path, file_bytes) 元组
     返回 list of (relative_output_path, data_dict)
     relative_output_path 由调用方拼接 OBS output_path 前缀
     """
+    obs_path, file_bytes = path_bytes
     work_dir = tempfile.mkdtemp()
     try:
-        # 1. 从 OBS 下载到 executor 本地（集群需配置 OBS 凭证）
+        # 1. 将 sc.binaryFiles() 读取的字节写入 executor 本地临时文件
+        #    ⚠️  不要用 subprocess hadoop fs -get：executor 的 environment.zip
+        #         里 hadoop 不在 PATH，会直接 FileNotFoundError
         local_input = os.path.join(work_dir, "input")
         os.makedirs(local_input)
         local_file = os.path.join(local_input, os.path.basename(obs_path))
-        subprocess.run(["hadoop", "fs", "-get", obs_path, local_file],
-                       check=True, capture_output=True)
+        with open(local_file, "wb") as f:
+            f.write(file_bytes)
 
         # 2. 调用现有处理逻辑（传入 base_dir 解耦路径依赖）
         results = your_processing_function(local_file, base_dir=work_dir, **config_dict)
         return results
 
     except Exception as e:
+        # ⚠️  必须 raise，不能 return []
+        #     executor 的 logger 输出不会出现在 driver 日志里，
+        #     静默 return [] 会让所有错误完全不可见，表现为结果全部为 0
         logger.error(f"Failed: {obs_path}: {e}", exc_info=True)
-        return []
+        raise
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -248,10 +255,12 @@ def main():
         # "doc_id": config.doc_id,
     }
 
+    # sc.binaryFiles() 通过 Spark 原生 OBS connector 读取文件字节并分发给 executor，
+    # 无需 executor 环境里有 hadoop 命令
     all_results: list = (
         spark.sparkContext
-        .parallelize(file_paths, config.num_partitions)
-        .flatMap(lambda p: process_single_file(p, config_dict))
+        .binaryFiles(",".join(file_paths), minPartitions=config.num_partitions)
+        .flatMap(lambda p: process_file_bytes(p, config_dict))
         .collect()
     )
 
@@ -337,7 +346,7 @@ def collect_results(folder) -> list:
 | 路径拼接 | `os.path.join(os.getcwd(), ...)` | `os.path.join(base_dir, ...)` |
 | 处理入口 | `for f in files: process(f)` | `sc.parallelize(files).flatMap(process_fn)` |
 | 写本地文件 | `open(path, 'w')` / `write_file` | 返回数据 → Driver 用 Hadoop FS 写 OBS |
-| 读本地文件（executor） | `open(local_path)` | `hadoop fs -get obs_path local_path` 后再读 |
+| 读 OBS 文件（executor） | `open(local_path)` | `sc.binaryFiles(paths)` 读取字节，executor 收到后写本地再读；**不要用 `subprocess hadoop fs -get`**，executor 的 PATH 里没有 hadoop |
 
 ---
 
@@ -345,6 +354,55 @@ def collect_results(folder) -> list:
 
 - `sc._jvm` / `sc._jsc` 只能在 **Driver** 上使用，不能在 executor 函数内使用
 - executor 函数必须是可序列化的顶层函数或 lambda，不能引用 SparkContext、SparkSession
-- `hadoop fs -get` 要求集群节点上 `hadoop` 命令可用，且 OBS 凭证已通过集群配置注入
 - executor 的本地临时目录用 `tempfile.mkdtemp()`，处理完毕后 `shutil.rmtree` 清理
 - `.collect()` 将所有结果拉回 Driver，适合结果总量可控的场景（通常 < 1GB）；结果量大时改用 `write_dataframe` 直接写 OBS
+- **Spark 并行粒度是文件级**：`sc.binaryFiles(paths)` 每个文件对应一个 partition，单文件时 Spark 没有提效，只有调度开销；多文件才有并行收益
+
+---
+
+## 常见陷阱（来自实际调试经验）
+
+### ⚠️ 陷阱一：executor 里用 subprocess 调 hadoop 命令
+
+```python
+# ❌ 错误写法 — executor 的 environment.zip 里 hadoop 不在 PATH
+subprocess.run(["hadoop", "fs", "-get", obs_path, local_file], check=True)
+# → FileNotFoundError: [Errno 2] No such file or directory: 'hadoop'
+
+# ✅ 正确写法 — 用 sc.binaryFiles() 在 Driver 读取文件字节，executor 直接写本地
+# 见"文件三"中的 process_file_bytes 模板
+```
+
+### ⚠️ 陷阱二：executor 里静默吞掉异常
+
+```python
+# ❌ 错误写法 — executor 的日志不会出现在 driver 输出里，return [] 让所有错误消失
+except Exception as e:
+    logger.error(f"Failed: {e}")
+    return []   # 表面上任务成功，实际结果全为 0，极难排查
+
+# ✅ 正确写法 — raise 让 Spark task 真正失败，driver 日志可见完整 traceback
+except Exception as e:
+    logger.error(f"Failed: {e}", exc_info=True)
+    raise
+```
+
+### ⚠️ 陷阱三：多文档类型共用含类型特定校验的解析函数
+
+当工具需要处理多种格式（如 hwics / hdx）时，如果共用一个解析函数，该函数内部包含某种格式特有的字段校验（如检查 `DC.Identifier` meta 标签是否存在），其他格式的文件会被静默丢弃。
+
+```python
+# ❌ 错误写法 — convert() 里有 hwics 特有的 DC.Identifier 校验
+#    hdx 文件没有这个字段 → convert() 返回 None → 文件被跳过 → 0 结果
+result, title = convert(html_path, doc_id, topic_bookmap)  # hdx 全部返回 None
+
+# ✅ 正确写法 — 抽取纯内容解析函数，URI 构建由各类型自己负责
+def parse_html(html_path) -> tuple[str, str | None]:
+    """只提取正文和标题，不涉及任何 URI 或格式特定校验"""
+    ...
+    return text_content, title
+
+# hdx 处理函数调用 parse_html，URI 由 navi.xml 的 topic_id 构建
+text, title = parse_html(html_path)
+result = {"uri": f"...hdx...?id={topic_id}", "text": text, "title": title}
+```
